@@ -1,5 +1,7 @@
 # cluck
 
+<img src="https://cdn.weasyl.com/~unfilledflag/submissions/1465908/53f99edba29057b2c740e3d679ebd3aae2947d3909b451654262679f809e9e35/unfilledflag-cluck-cluck-mother-hen.jpg">
+
 ## What
 
 A dead-simple Clojure library offering function dispatch based on randomness or specific weights/probabilities.
