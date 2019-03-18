@@ -57,7 +57,7 @@ Takes a `java.util.Random` object (or `nil`) followed by some weight to function
 let [f (weight-fn nil ;; pass your own `java.util.Random` for repeatability
                   [1 (constantly :a)]
                   [2 (constantly :b)]   ;; return :b twice as many times as :a
-                  [4 (constantly :c)])  ;; return :c twice as many times as :b]
+                  [4 (constantly :c)])] ;; return :c twice as many times as :b
   (frequencies 
     (repeatedly 10000 f)))
     
