@@ -18,18 +18,12 @@
    it will be converted to one (via `constantly`)."
   [^Random rnd & fns]
   (rand-fn* (or rnd (Random. 47))
-            (map internal/->fn fns)))
+            (mapv internal/->fn fns)))
 
 ;; Probabilistic dispatch
 ;; ======================
 (defn- prob-fn*
   [^Random rnd mappings]
-  (assert
-    (let [prob-vs (map first mappings)]
-      (or (some (partial = :else) prob-vs)
-          (== 1 (apply + prob-vs))))
-    "Probabilities do not sum to 1, and no :else clause was provided!")
-
   (let [cdf (->> mappings
                  (group-by first)     ;; there could be duplicate probabilities
                  internal/else->prob  ;; check for :else clause
@@ -50,6 +44,13 @@
    Performance impact is virtually negligible, since the only extra work that the returned function has to do,
    is to generate a couple of random numbers, and find the right fn to invoke."
   [rnd & probabilities]
+
+  (assert
+    (let [probs (map first probabilities)]
+      (or (some (partial = :else) probs)
+          (== 1 (apply + probs))))
+    "Probabilities do not sum to 1, and no :else clause was provided!")
+
   (prob-fn* (or rnd (Random. 47)) probabilities))
 
 
@@ -57,11 +58,6 @@
 ;; =================
 (defn- weight-fn*
   [^Random rnd mappings]
-
-  (assert (every? (every-pred pos? integer?)
-                  (map first mappings))
-          "Non-positive, or non-integer weight(s) detected!")
-
   (let [cdf (->> mappings
                  (group-by first)     ;; there could be duplicate weights
                  internal/build-cdf)
@@ -83,4 +79,9 @@
    Performance impact is virtually negligible, since the only extra work that the returned function has to do,
    is to generate a couple of random numbers, and find the right fn to invoke."
   [^Random rnd & weights]
+
+  (assert (every? (every-pred pos? integer?)
+                  (map first weights))
+          "Non-positive, or non-integer weight(s) detected!")
+
   (weight-fn* (or rnd (Random. 47)) weights))
