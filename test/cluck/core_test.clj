@@ -93,23 +93,23 @@
 (deftest slot-machines
   (testing "fair VS biased slot-machines"
 
-    (let [fair-slot-machine (slot-machine rand-fn 3 [:star :cherry :banana :cat :dollar])
-          biased-slot-machine (slot-machine weight-fn 3 [[2 :star]
+    (let [fair-slot-machine (slot-machine rand-fn 4 [:star :cherry :banana :cat :dollar :car])
+          biased-slot-machine (slot-machine weight-fn 4 [[2 :star]
                                                          [2 :cherry]
                                                          [2 :banana]
                                                          [2 :cat]
-                                                         [1 :dollar]]) ;; jackpot symbol - double payout
+                                                         [2 :car]
+                                                         [1 :dollar]]) ;; jackpot symbol - double payout - half the chances
+          run-until-jackpot #(->> %
+                                  repeatedly
+                                  (take-until (partial apply = :dollar))
+                                  count)
+          fair-jackpot-attempts   (run-until-jackpot fair-slot-machine)
+          biased-jackpot-attempts (run-until-jackpot biased-slot-machine)]
 
-          fair-jackpot (->> fair-slot-machine
-                            repeatedly
-                            (take-until (partial apply = :dollar))
-                            count)
-          biased-jackpot (->> biased-slot-machine
-                              repeatedly
-                              (take-until (partial apply = :dollar))
-                              count)]
-      ;; it took more attempts for jackpot
-      (is (> biased-jackpot fair-jackpot))
+      (is (> biased-jackpot-attempts
+             fair-jackpot-attempts)
+          "It took more attempts (money) to hit the jackpot in the biased slot machine")
       )
     )
   )

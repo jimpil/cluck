@@ -4,7 +4,7 @@
 
 ;; Random dispatch
 ;; ===============
-(defn- rand-fn*
+(defn rand-fn*
   [^Random rnd fns]
   (fn [& args]
     (-> rnd
@@ -22,7 +22,7 @@
 
 ;; Probabilistic dispatch
 ;; ======================
-(defn- prob-fn*
+(defn prob-fn*
   [^Random rnd mappings]
   (let [cdf (->> mappings
                  (group-by first)     ;; there could be duplicate probabilities
@@ -56,7 +56,7 @@
 
 ;; Weighted dispatch
 ;; =================
-(defn- weight-fn*
+(defn weight-fn*
   [^Random rnd mappings]
   (let [cdf (->> mappings
                  (group-by first)     ;; there could be duplicate weights
@@ -85,3 +85,4 @@
           "Non-positive, or non-integer weight(s) detected!")
 
   (weight-fn* (or rnd (Random. 47)) weights))
+
