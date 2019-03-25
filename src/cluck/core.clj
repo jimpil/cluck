@@ -1,5 +1,6 @@
 (ns cluck.core
-  (:require [cluck.internal :as internal])
+  (:require [cluck.internal :as internal]
+            [cluck.markov-chain :as mc])
   (:import  [java.util Random]))
 
 ;; Random dispatch
@@ -13,11 +14,11 @@
 
 (defn rand-fn
   "Returns a function which, whenever called,
-   will randomly (via `rand-nth`) call one of the supplied functions.
+   will randomly dispatch to one of the provided functions.
    If a supplied function is not a fn (test via `fn?`),
    it will be converted to one (via `constantly`)."
   [^Random rnd & fns]
-  (rand-fn* (or rnd (Random. 47))
+  (rand-fn* (or rnd (Random. internal/RND_SEED))
             (mapv internal/->fn fns)))
 
 ;; Probabilistic dispatch
@@ -29,7 +30,7 @@
                  internal/else->prob  ;; check for :else clause
                  internal/build-cdf)] ;; finally build the CDF
 
-    (internal/compile-cdf cdf #(.nextDouble rnd))))
+    (internal/compile-cdf cdf rnd #(.nextDouble rnd))))
 
 
 (defn prob-fn
@@ -39,10 +40,9 @@
    mapping must be provided. If the probability maps to a non-fn (test via `fn?`),
    it will be converted to one (via `constantly`). The function returned accepts variadic arguments,
    so it will never complain. However, realistically the arguments passed to it should be able to
-   slot-in nicely to any of the functions provided in the mappings, which in turn means that
-   those functions should have rather similar (or open) argument lists.
-   Performance impact is virtually negligible, since the only extra work that the returned function has to do,
-   is to generate a couple of random numbers, and find the right fn to invoke."
+   slot-in nicely to any of the functions provided in the mappings. Performance impact is virtually
+   negligible, since the only extra work that the returned function has to do, is to generate
+   a couple of random numbers, and find the right fn to invoke."
   [rnd & probabilities]
 
   (assert
@@ -51,7 +51,7 @@
           (== 1 (apply + probs))))
     "Probabilities do not sum to 1, and no :else clause was provided!")
 
-  (prob-fn* (or rnd (Random. 47)) probabilities))
+  (prob-fn* (or rnd (Random. internal/RND_SEED)) probabilities))
 
 
 ;; Weighted dispatch
@@ -61,28 +61,65 @@
   (let [cdf (->> mappings
                  (group-by first)     ;; there could be duplicate weights
                  internal/build-cdf)
-        high (-> cdf peek first)]
+        high (or (-> cdf meta :high)
+                 (-> cdf peek first))]
 
-    (internal/compile-cdf cdf #(internal/rand-int-uniform rnd 0 high))))
+    (internal/compile-cdf cdf rnd #(internal/rand-int-uniform rnd 0 high))))
 
 
 (defn weight-fn
   "Takes a java.util.Random object (or nil), followed by pairs of mappings (weight => fn/value),
-   and returns a function which will dispatch to the appropriate fn, according to the weights provided.
-   Unlike probabilities, weights can be arbitrarily large (positive) values, and need not sum to 1.
-   They don't have any meaning on their own, only when compared to other weights. Therefore the effect
-   of a weight is always proportional (a weight 2 will fire roughly half the times than a weight 4).
-   If the weight maps to a non-fn (test via `fn?`), it will be converted to one (via `constantly`).
-   The function returned accepts variadic arguments, so it will never complain. However, realistically
-   the arguments passed to it should be able to slot-in nicely to any of the functions provided in the
-   mappings, which in turn means that those functions should have rather similar (or open) argument lists.
-   Performance impact is virtually negligible, since the only extra work that the returned function has to do,
-   is to generate a couple of random numbers, and find the right fn to invoke."
+   and returns a function which will (proportionally) dispatch to the appropriate fn,
+   according to the weights provided. Unlike probabilities, weights can be arbitrarily large
+   (positive) values, and need not sum to 1. They don't have any meaning on their own,
+   only when compared to other weights. Therefore the effect of a weight is always proportional
+   (a weight 2 will fire roughly half the times than a weight 4). If the weight maps to a non-fn
+   (test via `fn?`), it will be converted to one (via `constantly`). The function returned accepts variadic arguments,
+   so it will never complain. However, realistically the arguments passed to it should be able to slot-in nicely
+   to any of the functions provided in the mappings. Performance impact is virtually negligible,
+   since the only extra work that the returned function has to do, is to generate a couple of random numbers,
+   and find the right fn to invoke."
   [^Random rnd & weights]
 
   (assert (every? (every-pred pos? integer?)
                   (map first weights))
           "Non-positive, or non-integer weight(s) detected!")
 
-  (weight-fn* (or rnd (Random. 47)) weights))
+  (weight-fn* (or rnd (Random. internal/RND_SEED)) weights))
+
+
+(defn mcmc-fn ;; Markov-Chain-Monte-Carlo
+  "Takes a java.util.Random object (or nil), an order <n>,
+   and a sequence of <states> (e.g observed or desired).
+   Returns a function which will (stochastically) produce random states,
+   according to their n-order observed transitions (derived from the provided states).
+   The returned function can be called with 0 (random initial state),
+   or 1 (specific initial state), or 2 arguments (initial-state & a boolean indicating
+   whether to stop the simulation when an unseen state is produced - defaults to false,
+   in which case the n-1 order chain will be considered for sampling),
+   and returns a potentially infinite sequence of possible next states (Monte-Carlo simulation)."
+
+  [^Random rnd n states]
+
+  (assert (pos-int? n) "<n> must be a positive integer!")
+  (assert (or (map? states)
+              (sequential? states)) "<states> must be a map (prebuilt n-grams), or something sequential (raw states)!")
+
+  (let [delayed? (sequential? states)
+        [matrix-n & lower-n] (if delayed?
+                               ;; raw-states - build n-grams from scratch delaying the lower-order ones
+                               (map #(delay (mc/transition-cdf % states))
+                                    (range n 0 -1)) ;; descending order
+                               ;; already constructed n-grams - just use them
+                               (map (fn [[n grams]]
+                                      ;; grams is a map of the form
+                                      ;; {[w1 w2] {w3 17 w4 43} ...} - example trigram transitions
+                                      (mc/transition-cdf n grams))
+                                    (sort-by key > states))) ;; descending order
+        rnd (or rnd (Random. internal/RND_SEED))]
+
+    (partial mc/simulate
+             ;; realise the (requested) n-order matrix
+             (apply conj [(cond-> matrix-n delayed? force)] lower-n)
+             rnd)))
 

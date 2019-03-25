@@ -69,6 +69,41 @@ let [f (weight-fn nil ;; pass your own `java.util.Random` for repeatability
 
 ```
 
+### cluck.core/mcmc-fn \[rnd n-order states\]
+Takes a `java.util.Random` object (or `nil`) followed by a sequence of observed/proposed/desired states (stationary distribution), and returns a function representing an nth-order Markov-Chain Monte-Carlo simulation. As such, it will produce random states in a stochastic manner (according to their previously observed transitions). It can be called with 0 (random initial state), 1 (specific initial state), or 2 arguments (initial-state & a boolean indicating whether to stop the simulation when an unseen state is produced - defaults to false), and returns a potentially infinite sequence of possible next states.
+
+#### Permutations VS observed n-grams
+In order to build a proper probability matrix per transition, one has to consider all the possible transitions from a state, and then adjust against the observed - potentially assigning some zeros along the way. And that's where smoothing coming in to get rid of these zeros. 
+
+In practice, computing all the possible n-wise permutations of all the unique states can sometimes be difficult, or even intractable. To put things in perspective consider this. According to `ngrams.info` there are around 155 million unique trigrams, and about 15 million unique bigrams (in a 430 million word corpus). We can use those to build two Marko-chains - a second-order from the trigrams, and a first-order from the bigrams. Summing those up, gives us about 160 million elements having to be held in memory. Contrast that with the almost 1 billion elements we would need to store all the 3-wise permutations of just 1000 unique words (conservative estimate given 430 million words?). Now imagine doing 4-wise permutations! This gets out of hand very quickly, and so it's often preferable to store only what was actually observed, and deal with *useen states* some other way. 
+
+The approach taken in `cluck` is rather simple. If the caller asks for an `n`th-order Markov-Chain, `cluck` will actually build `n` chains in descending order down to the first-order. At every step, if no transitions are found on the current level (i.e. the current sequence of states was not present in the 'training data'), the prediction will be downgraded (i.e. the next level down will be considered). In the worst case scenario, the last (first-order) Markov-Chain will be considered for direct sampling, at which point we're guaranteed to find a state to transition to. Despite not sounding very intuitive, this approach can actually save significant space, partly because it allows for optimisations when implementing it. For instance, we don't need to actually compute all these chains, unless the process hits a point where it cannot progress. But this ultimately depends on the training-data (the states provided). It may well be the case that the training data is arranged in such a way that the nth-order chain will be sufficient for direct sampling. In such cases, computing the other, lower-grade, chains can be avoided (i.e. they are wrapped with `delay`). 
+
+This approach may not work great in cases where the state space is not particularly big (and therefore computing all their possible n-wise permutations may be preferable), but for whatever reason, not all n-1 order state transitions appear in the training data. 
+    
+#### Prebuilt n-grams
+There are various (free or paid) online resources that can be used to obtain word n-grams from. These come in various forms, but in essence they represent the same thing - how many times a particular (fixed-size) sequence of words occurs in some corpus. For example, a collection of trigrams could be found as a flat list (e.g. csv file) with values such as `N, Word1, Word2, Word3`. This can be read as `word1 followed by word2 followed by word3, occured N times in the corpus`. We can transform such rows into something `cluck` can work with rather easily. The expected format will look like the following:
+
+```clj
+{
+  [word1 word2] {word3 32 ...}
+  [word3 word4] {word5 56 ...}
+  ...
+}       
+``` 
+
+Once we have such a map, we can build an n-1 order Markov-Chain. If we have access to all the n-grams down to bigrams, we can manually build all the chains that `cluck` would otherwise build, and provide those instead of raw states, like so:
+
+```clj
+{
+ 3 {[word1 word2 word3] {word4 N ...} ...} ;; based on 4-grams
+ 2 {[word1 word2] {word3 N ...} ...}       ;; based on 3-grams  
+ 1 {[word1] {word2 N ...} ...}             ;; based on 2-grams
+}
+``` 
+
+One thing to consider here, is that by doing this we lose any opportunity for lazy-loading.  
+
 
 ## License
 

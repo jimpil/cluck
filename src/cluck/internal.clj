@@ -1,8 +1,10 @@
 (ns cluck.internal
-  (:import (java.util Random)))
+  (:import (java.util Random)
+           (clojure.lang PersistentQueue ITransientCollection)))
 
-(defonce sum
-  (fnil + 0))
+(defonce RND_SEED 42)
+(defonce sum      (fnil + 0))
+(defonce safe-inc (fnil inc 0))
 
 (defn ->fn
   "Converts a plain value to a function via `constantly`."
@@ -13,14 +15,18 @@
 
 (defn build-cdf
   "Helper for building the cumulative distribution."
-  [grouped]
-  (reduce-kv
-    (fn [acc n fns]
-      (conj acc [(sum (first (peek acc))
-                      (* n (count fns)))
-                 (mapv (comp ->fn second) fns)]))
-    []
-    grouped))
+  ([grouped]
+   (build-cdf grouped second))
+  ([grouped extract-val]
+   (let [cdf (persistent!
+               (reduce-kv
+                 (fn [acc n fns]
+                   (conj acc [(sum (first (peek acc))
+                                   (* n (count fns)))
+                              (mapv (comp ->fn extract-val) fns)]))
+                 (transient [])
+                 grouped))]
+     (with-meta cdf {:high (-> cdf peek first)}))))
 
 (defn else->prob
   "Helper for handling a potential :else clause."
@@ -38,7 +44,7 @@
     grouped))
 
 (defn rand-int-uniform
-  "Uniform distribution from lo (inclusive) to hi (exclusive).
+  "Uniform distribution from low (inclusive) to high (exclusive).
    Defaults to range of Java long."
   ([low high]
    (rand-int-uniform (Random. 42) low high))
@@ -59,12 +65,75 @@
         (nth coll))))
 
 (defn compile-cdf
-  [cdf rnd!]
+  [cdf rnd rnd!]
   (fn [& args]
     (let [r (rnd!)]
       (-> (some
             (fn [[prob fns]]
-              (when (< r prob)
-                (rand-nth fns))) ;; for duplicates choose randomly
+              (and (< r prob)
+                   (rand-nth-uniform rnd fns))) ;; for duplicates choose randomly
             cdf)
           (apply args)))))
+
+(defn update-in!
+  "Same as `clojure.core/update-in` but for transient collections.
+   WARNING: Assumes <m> is transient all the way down!"
+  [m [k & ks] f & args]
+  (if ks
+    (assoc! m k (apply update-in! (get m k) ks f args))
+    (assoc! m k (apply f (get m k) args))))
+
+
+(defn map-vals
+  "Maps <f> to all values of map <m>."
+  [f m]
+  (persistent!
+    (reduce-kv (fn [m k v]
+                 (assoc! m k (f v)))
+               (transient {})
+               m)))
+
+(defn filter-vals
+  "Removes entries from <m>, where `(pred value)`, returns logical false."
+  [pred m]
+  (persistent!
+    (reduce-kv (fn [m k v]
+                 (if (pred v)
+                   m
+                   (dissoc! m k)))
+               (transient m)
+               m)))
+
+(defn invoke-if-fn
+  "If <init> is a fn invoke it with no arguments.
+   Useful for producing values on init-nodes."
+  [init]
+  (if (fn? init)
+    (init)
+    init)) ;; plain value
+
+(defn deref-if-future
+  [x]
+  (if (future? x)
+    @x
+    x))
+
+(defn deref-if-future-or-delay
+  [x]
+  (cond-> (force x) ;; `force` returns x when it's not a Delay
+          (future? x) deref))
+
+(defn deref-if-realised
+  [x]
+  (if (realized? x)
+    (deref x)
+    x))
+
+(defn queue
+  ([] (PersistentQueue/EMPTY))
+  ([coll] (reduce conj PersistentQueue/EMPTY coll)))
+
+
+(defn transient?
+  [coll]
+  (instance? ITransientCollection coll))
