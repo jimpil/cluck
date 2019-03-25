@@ -18,14 +18,13 @@
   ([grouped]
    (build-cdf grouped second))
   ([grouped extract-val]
-   (let [cdf (persistent!
-               (reduce-kv
-                 (fn [acc n fns]
-                   (conj acc [(sum (first (peek acc))
-                                   (* n (count fns)))
-                              (mapv (comp ->fn extract-val) fns)]))
-                 (transient [])
-                 grouped))]
+   (let [cdf (reduce-kv
+               (fn [acc n fns]
+                 (conj acc [(sum (first (peek acc))
+                                 (* n (count fns)))
+                            (mapv (comp ->fn extract-val) fns)]))
+               []
+               grouped)]
      (with-meta cdf {:high (-> cdf peek first)}))))
 
 (defn else->prob
@@ -88,21 +87,23 @@
   "Maps <f> to all values of map <m>."
   [f m]
   (persistent!
-    (reduce-kv (fn [m k v]
-                 (assoc! m k (f v)))
-               (transient {})
-               m)))
+    (reduce-kv
+      (fn [m k v]
+        (assoc! m k (f v)))
+      (transient {})
+      m)))
 
 (defn filter-vals
   "Removes entries from <m>, where `(pred value)`, returns logical false."
   [pred m]
   (persistent!
-    (reduce-kv (fn [m k v]
-                 (if (pred v)
-                   m
-                   (dissoc! m k)))
-               (transient m)
-               m)))
+    (reduce-kv
+      (fn [m k v]
+        (if (pred v)
+          m
+          (dissoc! m k)))
+      (transient m)
+      m)))
 
 (defn invoke-if-fn
   "If <init> is a fn invoke it with no arguments.
@@ -114,20 +115,16 @@
 
 (defn deref-if-future
   [x]
-  (if (future? x)
-    @x
-    x))
+  (cond-> x (future? x) deref))
+
+(defn deref-if-realised
+  [x]
+  (cond-> x (realized? x) deref))
 
 (defn deref-if-future-or-delay
   [x]
   (cond-> (force x) ;; `force` returns x when it's not a Delay
-          (future? x) deref))
-
-(defn deref-if-realised
-  [x]
-  (if (realized? x)
-    (deref x)
-    x))
+          true deref-if-future))
 
 (defn queue
   ([] (PersistentQueue/EMPTY))
