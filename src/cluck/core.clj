@@ -88,6 +88,24 @@
   (weight-fn* (or rnd (Random. internal/RND_SEED)) weights))
 
 
+(defn mc-fn ;; Markov-Chain
+  ""
+  [n states]
+
+  (assert (pos-int? n) "<n> must be a positive integer!")
+  (assert (sequential? states) "<states> must be a map (prebuilt n-grams), or something sequential (raw states)!")
+
+  (let [[matrix-n & _] (mc/n-matrices n true states)
+        matrix-n (force matrix-n)]
+
+    (fn [state-seq next-state]
+      (if-let [observed (get matrix-n state-seq)]
+        (/ (get observed next-state)  ;; state frequency
+           (apply + (vals observed))) ;; total
+        0))) ;; zero probability for anything non-observed
+  )
+
+
 (defn mcmc-fn ;; Markov-Chain-Monte-Carlo
   "Takes a java.util.Random object (or nil), an order <n>,
    and a sequence of <states> (e.g observed or desired).
@@ -106,16 +124,7 @@
               (sequential? states)) "<states> must be a map (prebuilt n-grams), or something sequential (raw states)!")
 
   (let [delayed? (sequential? states)
-        [matrix-n & lower-n] (if delayed?
-                               ;; raw-states - build n-grams from scratch delaying the lower-order ones
-                               (map #(delay (mc/transition-cdf % states))
-                                    (range n 0 -1)) ;; descending order
-                               ;; already constructed n-grams - just use them
-                               (map (fn [[n grams]]
-                                      ;; grams is a map of the form
-                                      ;; {[w1 w2] {w3 17 w4 43} ...} - example trigram transitions
-                                      (mc/transition-cdf n grams))
-                                    (sort-by key > states))) ;; descending order
+        [matrix-n & lower-n] (mc/n-matrices n delayed? states)
         rnd (or rnd (Random. internal/RND_SEED))]
 
     (partial mc/simulate

@@ -93,3 +93,17 @@
            true
            (internal/map-vals counts->cdf)))
 
+(defn n-matrices
+  [n delayed? training]
+  (if delayed?
+    ;; raw-states - build n-grams from scratch delaying the lower-order ones
+    (map #(delay (transition-cdf % training))
+         (range n 0 -1)) ;; descending order
+    ;; already constructed n-grams - just use them
+    (map (fn [[n grams]]
+           ;; grams is a map of the form
+           ;; {[w1 w2] {w3 17 w4 43} ...} - example trigram transitions
+           (transition-cdf n grams))
+         (sort-by key > training)))
+  )
+

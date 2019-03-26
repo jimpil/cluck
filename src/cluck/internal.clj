@@ -79,7 +79,8 @@
    WARNING: Assumes <m> is transient all the way down!"
   [m [k & ks] f & args]
   (if ks
-    (assoc! m k (apply update-in! (get m k) ks f args))
+    (assoc! m k (apply update-in! (or (get m k)
+                                      (transient {})) ks f args))
     (assoc! m k (apply f (get m k) args))))
 
 
@@ -134,3 +135,9 @@
 (defn transient?
   [coll]
   (instance? ITransientCollection coll))
+
+(defn empirical-probs
+  [all-observed state]
+  (let [total (apply + (vals all-observed))
+        state-score (get all-observed state)]
+    (/ state-score total)))

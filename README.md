@@ -72,17 +72,54 @@ let [f (weight-fn nil ;; pass your own `java.util.Random` for repeatability
 ### cluck.core/mcmc-fn \[rnd n-order states\]
 Takes a `java.util.Random` object (or `nil`) followed by a sequence of observed/proposed/desired states (stationary distribution), and returns a function representing an nth-order Markov-Chain Monte-Carlo simulation. As such, it will produce random states in a stochastic manner (according to their previously observed transitions). It can be called with 0 (random initial state), 1 (specific initial state), or 2 arguments (initial-state & a boolean indicating whether to stop the simulation when an unseen state is produced - defaults to false), and returns a potentially infinite sequence of possible next states.
 
+
+#### Example
+
+```clj
+;; let's build a high quality spam generator from some free literature
+
+(require '[clojure.string :as str])
+
+(def three-men-words
+  (as-> "https://www.gutenberg.org/files/308/308-0.txt" $it
+        (java.net.URL. $it)
+        (slurp $it)
+        (str/replace $it \’ \') ;; replace the right single-quotes with regular ones
+        (re-seq #"\w+'?[a-zA-Z]*|[,.!?\-]" $it) ;; keep punctuation as separate tokens and avoid splitting on single-quotes
+        (map str/trim $it)))
+       
+;; (count three-men-words)       => 81746
+;; (count (set three-men-words)) => 7879       
+
+(def generate-spam ;; this is our infinite spam generator
+  (cluck/mcmc-fn nil 3 three-men-words))
+  
+(defn spam-paragraph [initial-state] 
+  (->> initial state
+       generate-spam  
+       (take 300)        
+       (str/join \space)))  
+  
+
+(spam-paragraph ["It" "is" "a"]) 
+
+=> 
+
+"It is a veritable picture of an old country inn , with green , square courtyard in front , where , on seats beneath the trees , the old men shake their heads , for they have heard such tales before . And all the evening . Then he and eight other gentlemen of about the same age went down in a graceful attitude , and try to hide his feet . My first idea was that he , who didn't care for carved oak , should have his drawing - room , or coal - cellars , she laughed them all to come and have a smile , saying that he would spare the friends and relations , but it takes long practice before you can do with this work . Copyright laws in most countries are in a great hurry when he first dawned upon the vision , but , from what I have seen of the district , I am fond of locks . They pleasantly break the monotony of the pull . I like to give the youngsters a chance . I notice that most of the conversation being on his part that he knew how funny he was would have completely ruined it all . As we drew nearer , and now drew nearer , and soon the boat from which they were worked lay alongside us . It contained a party of provincial Arrys and Arriets , out for a moonlight row , and the wind blowing a perfect hurricane across it , we felt that the time had come to commence operations . Hector I think that was his name went on pulling while I unrolled the sail . Then , after tea , the wind is consistently in your favour both ways"
+
+```
+
 #### Permutations VS observed n-grams
-In order to build a proper probability matrix per transition, one has to consider all the possible transitions from a state, and then adjust against the observed - potentially assigning some zeros along the way. And that's where smoothing coming in to get rid of these zeros. 
+In order to build a proper n-order probability matrix, one has to consider all the n-wise permutations of the unique states, and then adjust against what was observed - potentially assigning some zeros along the way. And that's where smoothing coming in to get rid of these zeros. 
 
-In practice, computing all the possible n-wise permutations of all the unique states can sometimes be difficult, or even intractable. To put things in perspective consider this. According to `ngrams.info` there are around 155 million unique trigrams, and about 15 million unique bigrams (in a 430 million word corpus). We can use those to build two Marko-chains - a second-order from the trigrams, and a first-order from the bigrams. Summing those up, gives us about 160 million elements having to be held in memory. Contrast that with the almost 1 billion elements we would need to store all the 3-wise permutations of just 1000 unique words (conservative estimate given 430 million words?). Now imagine doing 4-wise permutations! This gets out of hand very quickly, and so it's often preferable to store only what was actually observed, and deal with *useen states* some other way. 
+In practice, computing all the possible n-wise permutations of all the unique states can sometimes be difficult, or even intractable. To put things in perspective consider this. According to `ngrams.info` there are around 155 million unique trigrams, and about 15 million unique bigrams (in a 430 million word corpus). We can use those to build two Marko-chains - a second-order from the trigrams, and a first-order from the bigrams. Summing those up, gives us about 160 million elements having to be stored in memory. Contrast that with the almost 1 billion elements we would need to store all the 3-wise permutations of just 1000 unique words (conservative estimate given 430 million words?). Now imagine doing 4-wise permutations! This gets out of hand very quickly, and so it's often preferable to store only what was actually observed, and deal with *useen states* some other way. 
 
-The approach taken in `cluck` is rather simple. If the caller asks for an `n`th-order Markov-Chain, `cluck` will actually build `n` chains in descending order down to the first-order. At every step, if no transitions are found on the current level (i.e. the current sequence of states was not present in the 'training data'), the prediction will be downgraded (i.e. the next level down will be considered). In the worst case scenario, the last (first-order) Markov-Chain will be considered for direct sampling, at which point we're guaranteed to find a state to transition to. Despite not sounding very intuitive, this approach can actually save significant space, partly because it allows for optimisations when implementing it. For instance, we don't need to actually compute all these chains, unless the process hits a point where it cannot progress. But this ultimately depends on the training-data (the states provided). It may well be the case that the training data is arranged in such a way that the nth-order chain will be sufficient for direct sampling. In such cases, computing the other, lower-grade, chains can be avoided (i.e. they are wrapped with `delay`). 
+The approach taken in `cluck` is rather simple, and is described in the literature as an `All-kth-order Markov model`. If the caller asks for an `n`th-order Markov-Chain, `cluck` will actually build `n` chains in descending order down to the first-order. At each iteration, if no transitions are found on the current level (i.e. the current sequence of states was not observed in the 'training data'), the prediction will be downgraded (i.e. the next level down will be considered). In the worst case scenario, the last (first-order) Markov-Chain will be considered for direct sampling, at which point we're guaranteed to find a state to transition to. Despite not sounding very intuitive, this approach can sometimes save significant space, partly because it allows for optimisations when implementing it. For instance, we don't need to actually compute all these chains, unless the simulation hits a point where it cannot progress (and we want it to progress). But this ultimately depends on the training-data (the states provided). It may well be the case that the training data is arranged in such a way that the nth-order chain will always be sufficient for direct sampling. In such cases, computing the other, lower-grade, chains can be avoided (i.e. they are wrapped with `delay`). 
 
-This approach may not work great in cases where the state space is not particularly big (and therefore computing all their possible n-wise permutations may be preferable), but for whatever reason, not all n-1 order state transitions appear in the training data. 
+This approach may not work great in cases where the state space is not particularly big (and therefore computing all their possible n-wise permutations may actually be preferable), but for whatever reason, not all n-order state transitions appear in the training data. 
     
 #### Prebuilt n-grams
-There are various (free or paid) online resources that can be used to obtain word n-grams from. These come in various forms, but in essence they represent the same thing - how many times a particular (fixed-size) sequence of words occurs in some corpus. For example, a collection of trigrams could be found as a flat list (e.g. csv file) with values such as `N, Word1, Word2, Word3`. This can be read as `word1 followed by word2 followed by word3, occured N times in the corpus`. We can transform such rows into something `cluck` can work with rather easily. The expected format will look like the following:
+There are various (free or paid) online resources that can be used to obtain word n-grams from. These come in various forms, but in essence they represent the same thing - how many times a particular (fixed-size) sequence of words occurs in some corpus. For example, a collection of trigrams could be found as a flat list (e.g. csv file) with values such as `N, Word1, Word2, Word3`. This can be read as `word1 followed by word2 followed by word3, occured N times in the corpus`. We can transform such rows into something `cluck` can work with rather easily. The expected format looks like the following:
 
 ```clj
 {
