@@ -92,22 +92,37 @@ Takes a `java.util.Random` object (or `nil`) followed by a sequence of observed/
 ;; (count (set three-men-words)) => 7879       
 
 (def generate-spam ;; this is our infinite spam generator
-  (cluck/mcmc-fn nil 3 three-men-words))
+  (mcmc-fn nil 3 three-men-words))
   
 (defn spam-paragraph [initial-state] 
-  (->> initial state
+  (->> initial-state
        generate-spam  
        (take 300)        
        (str/join \space)))  
-  
+       
+;; now ready to produce some nice spam
+(spam-paragraph ["It" "is" "a"]) => 
 
-(spam-paragraph ["It" "is" "a"]) 
-
-=> 
-
-"It is a veritable picture of an old country inn , with green , square courtyard in front , where , on seats beneath the trees , the old men shake their heads , for they have heard such tales before . And all the evening . Then he and eight other gentlemen of about the same age went down in a graceful attitude , and try to hide his feet . My first idea was that he , who didn't care for carved oak , should have his drawing - room , or coal - cellars , she laughed them all to come and have a smile , saying that he would spare the friends and relations , but it takes long practice before you can do with this work . Copyright laws in most countries are in a great hurry when he first dawned upon the vision , but , from what I have seen of the district , I am fond of locks . They pleasantly break the monotony of the pull . I like to give the youngsters a chance . I notice that most of the conversation being on his part that he knew how funny he was would have completely ruined it all . As we drew nearer , and now drew nearer , and soon the boat from which they were worked lay alongside us . It contained a party of provincial Arrys and Arriets , out for a moonlight row , and the wind blowing a perfect hurricane across it , we felt that the time had come to commence operations . Hector I think that was his name went on pulling while I unrolled the sail . Then , after tea , the wind is consistently in your favour both ways"
+It is a veritable picture of an old country inn , with green , square courtyard in front , 
+where , on seats beneath the trees , the old men shake their heads , for they have heard 
+such tales before . And all the evening . Then he and eight other gentlemen of about the 
+same age went down in a graceful attitude , and try to hide his feet . My first idea was 
+that he , who didn't care for carved oak , should have his drawing - room , or coal - cellars , 
+she laughed them all to come and have a smile , saying that he would spare the friends and 
+relations , but it takes long practice before you can do with this work . Copyright laws 
+in most countries are in a great hurry when he first dawned upon the vision , but , from
+ what I have seen of the district , I am fond of locks . They pleasantly break the monotony 
+ of the pull . I like to give the youngsters a chance . I notice that most of the conversation 
+ being on his part that he knew how funny he was would have completely ruined it all . 
+ As we drew nearer , and now drew nearer , and soon the boat from which they were worked 
+ lay alongside us . It contained a party of provincial Arrys and Arriets , out for a moonlight 
+ row , and the wind blowing a perfect hurricane across it , we felt that the time had come to 
+ commence operations . Hector I think that was his name went on pulling while I unrolled the sail . 
+ Then , after tea , the wind is consistently in your favour both ways
 
 ```
+
+
 
 #### Permutations VS observed n-grams
 In order to build a proper n-order probability matrix, one has to consider all the n-wise permutations of the unique states, and then adjust against what was observed - potentially assigning some zeros along the way. And that's where smoothing coming in to get rid of these zeros. 

@@ -1,7 +1,6 @@
 (ns cluck.markov-chain
   (:require [cluck.internal :as internal])
-  (:import [java.util Random]
-           (clojure.lang ITransientCollection)))
+  (:import [java.util Random]))
 
 (defn- next-state
   "Given a cumulative distribution, select randomly."
@@ -46,11 +45,15 @@
      rnd
      (internal/rand-nth-uniform rnd (keys (first matrices)))))
 
-
   ([matrices rnd initial-state]
    (simulate matrices rnd initial-state false))
 
   ([matrices rnd initial-state stop-on-unseen?]
+
+   (assert (= (count initial-state)
+              (-> matrices first first key count))
+     "initial-state length NOT right!")
+
    (cond->> (internal/queue initial-state)
             true (iterate (partial generate* matrices rnd stop-on-unseen?))
             stop-on-unseen? (take-while some?)
