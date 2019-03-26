@@ -101,8 +101,9 @@ Takes a `java.util.Random` object (or `nil`) followed by a sequence of observed/
        (str/join \space)))  
        
 ;; now ready to produce some nice spam
-(spam-paragraph ["It" "is" "a"]) => 
-
+(spam-paragraph ["It" "is" "a"]) =>  
+```
+```
 It is a veritable picture of an old country inn , with green , square courtyard in front , 
 where , on seats beneath the trees , the old men shake their heads , for they have heard 
 such tales before . And all the evening . Then he and eight other gentlemen of about the 
@@ -119,9 +120,7 @@ in most countries are in a great hurry when he first dawned upon the vision , bu
  row , and the wind blowing a perfect hurricane across it , we felt that the time had come to 
  commence operations . Hector I think that was his name went on pulling while I unrolled the sail . 
  Then , after tea , the wind is consistently in your favour both ways
-
 ```
-
 
 
 #### Permutations VS observed n-grams
