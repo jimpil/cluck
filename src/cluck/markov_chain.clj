@@ -40,10 +40,7 @@
    (simulate matrices (Random. internal/RND_SEED)))
 
   ([matrices rnd]
-   (simulate
-     matrices
-     rnd
-     (internal/rand-nth-uniform rnd (keys (first matrices)))))
+   (simulate matrices rnd (internal/rand-nth-uniform rnd (keys (first matrices)))))
 
   ([matrices rnd initial-state]
    (simulate matrices rnd initial-state false))
